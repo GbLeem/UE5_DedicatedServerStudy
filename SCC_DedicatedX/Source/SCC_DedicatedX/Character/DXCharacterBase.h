@@ -11,10 +11,4 @@ class SCC_DEDICATEDX_API ADXCharacterBase : public ACharacter
 
 public:
 	ADXCharacterBase();
-
-	virtual void PossessedBy(AController* NewController) override;
-
-	virtual void OnRep_Owner() override;
-
-	virtual void PostNetInit() override;
 };
