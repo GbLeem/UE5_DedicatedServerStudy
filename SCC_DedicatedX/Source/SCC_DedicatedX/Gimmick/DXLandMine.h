@@ -23,12 +23,16 @@ protected:
 	
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
+	virtual void GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const override;
 private:
 	UFUNCTION()
 	void OnLandMineBeginOverlap(AActor* OverlappedActor, AActor* OtherActor);
 
 	UFUNCTION(NetMulticast, Unreliable)
 	void MulticastRPCSpawnEffect();
+
+	UFUNCTION()
+	void OnRep_IsExploded();
 
 private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Meta = (AllowPrivateAccess))
@@ -43,5 +47,12 @@ private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Meta = (AllowPrivateAccess))
 	TObjectPtr<UParticleSystemComponent> Particle;
 
-	bool bIsExploded;
+	UPROPERTY(ReplicatedUsing = OnRep_IsExploded)
+	uint8 bIsExploded : 1;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (AllowPrivateAccess))
+	float NetCullDistance;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (AllowPrivateAccess))
+	TObjectPtr<UMaterial> ExplodedMaterial;
 };

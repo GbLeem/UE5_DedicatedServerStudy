@@ -4,9 +4,11 @@
 #include "Components/BoxComponent.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Particles/ParticleSystemComponent.h"
+#include "Net/UnrealNetwork.h"
 
 ADXLandMine::ADXLandMine()
 	:bIsExploded(false)
+	,NetCullDistance(1000.f)
 {
 	PrimaryActorTick.bCanEverTick = false;
 	bReplicates = true;
@@ -23,6 +25,8 @@ ADXLandMine::ADXLandMine()
 	Particle = CreateDefaultSubobject<UParticleSystemComponent>(TEXT("Particle"));
 	Particle->SetupAttachment(SceneRoot);
 	Particle->SetAutoActivate(false);
+
+	SetNetCullDistanceSquared(NetCullDistance * NetCullDistance);
 }
 
 void ADXLandMine::BeginPlay()
@@ -66,6 +70,13 @@ void ADXLandMine::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	}
 }
 
+void ADXLandMine::GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME(ThisClass, bIsExploded);
+}
+
 void ADXLandMine::OnLandMineBeginOverlap(AActor* OverlappedActor, AActor* OtherActor)
 {
 	//if server
@@ -73,6 +84,11 @@ void ADXLandMine::OnLandMineBeginOverlap(AActor* OverlappedActor, AActor* OtherA
 	{
 		UKismetSystemLibrary::PrintString(this, FString::Printf(TEXT("run on server")), true, true, FLinearColor::Green, 5.f);
 		MulticastRPCSpawnEffect();
+
+		if (!bIsExploded)
+		{
+			bIsExploded = true;
+		}
 	}
 	else
 	{
@@ -88,20 +104,37 @@ void ADXLandMine::OnLandMineBeginOverlap(AActor* OverlappedActor, AActor* OtherA
 				UKismetSystemLibrary::PrintString(this, FString::Printf(TEXT("Run on other client")), true, true, FLinearColor::Green, 5.f);
 			}
 		}
+		if (!bIsExploded)
+		{
+			Particle->Activate(true);
+		}
+	}
+}
+
+void ADXLandMine::OnRep_IsExploded()
+{
+	if (bIsExploded && IsValid(ExplodedMaterial))
+	{
+		Mesh->SetMaterial(0, ExplodedMaterial);
 	}
 }
 
 void ADXLandMine::MulticastRPCSpawnEffect_Implementation()
 {
-	if (HasAuthority())
+	/*if (IsValid(ExplodedMaterial))
 	{
-		return;
-	}
-	//already exploded
-	if (bIsExploded)
-	{
-		return;
-	}
-	Particle->Activate(true);
-	bIsExploded = true;
+		Mesh->SetMaterial(0, ExplodedMaterial);
+	}*/
+	//if (HasAuthority())
+	//{
+	//	bIsExploded = true;
+	//	return;
+	//}
+	////already exploded
+	//if (bIsExploded)
+	//{
+	//	return;
+	//}
+	//Particle->Activate(true);
+	////bIsExploded = true;
 }
