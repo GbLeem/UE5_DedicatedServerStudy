@@ -51,6 +51,8 @@ private:
 
 	void HandleLandMineInput(const FInputActionValue& InValue);
 
+	void HandleMeleeAttackInput(const FInputActionValue& InValue);
+
 protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DXPlayerCharacter|Input")
 	TObjectPtr<UInputMappingContext> InputMappingContext;
@@ -66,6 +68,10 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DXPlayerCharacter|Input")
 	TObjectPtr<UInputAction> LandMineAction;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DXPlayerCharacter|Input")
+	TObjectPtr<UInputAction> MeleeAttackAction;
+
 #pragma endregion
 
 #pragma region LandMine
@@ -76,6 +82,26 @@ private:
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	TSubclassOf<AActor> LandMineClass;
+
+#pragma endregion
+
+#pragma region Attack
+
+public:
+	virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser) override;
+
+	void CheckMeleeAttackHit();
+
+private:
+	void DrawDebugMeleeAttack(const FColor& DrawColor, FVector TraceStart, FVector TraceEnd, FVector Forward);
+
+protected:
+	bool bCanAttack;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	TObjectPtr<UAnimMontage> MeleeAttackMontage;
+	
+	float MeleeAttackMontagePlayTime;
 
 #pragma endregion
 

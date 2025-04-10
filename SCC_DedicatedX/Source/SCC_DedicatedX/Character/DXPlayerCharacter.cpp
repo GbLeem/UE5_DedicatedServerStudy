@@ -2,7 +2,9 @@
 
 #include "Gimmick/DXLandMine.h"
 
+#include "Components/CapsuleComponent.h"
 #include "EnhancedInputSubsystems.h"
+#include "Engine/DamageEvents.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Camera/CameraComponent.h"
@@ -10,6 +12,8 @@
 #include "Kismet/KismetSystemLibrary.h"
 
 ADXPlayerCharacter::ADXPlayerCharacter()
+	:bCanAttack(true)
+	,MeleeAttackMontagePlayTime(0.f)
 {
 	PrimaryActorTick.bCanEverTick = false;
 
@@ -45,6 +49,8 @@ void ADXPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 	EIC->BindAction(JumpAction, ETriggerEvent::Completed, this, &ThisClass::StopJumping);
 
 	EIC->BindAction(LandMineAction, ETriggerEvent::Started, this, &ThisClass::HandleLandMineInput);
+
+	EIC->BindAction(MeleeAttackAction, ETriggerEvent::Started, this, &ThisClass::HandleMeleeAttackInput);
 }
 
 void ADXPlayerCharacter::BeginPlay()
@@ -60,6 +66,11 @@ void ADXPlayerCharacter::BeginPlay()
 		checkf(IsValid(EILPS), TEXT("EnhancedInputLocalPlayerSubsystem is invalid"));
 
 		EILPS->AddMappingContext(InputMappingContext, 0);
+	}
+
+	if (IsValid(MeleeAttackMontage))
+	{
+		MeleeAttackMontagePlayTime = MeleeAttackMontage->GetPlayLength();
 	}
 }
 
@@ -103,6 +114,82 @@ void ADXPlayerCharacter::HandleLandMineInput(const FInputActionValue& InValue)
 	{
 		ServerRPCSpawnLandMine();
 	}
+}
+
+void ADXPlayerCharacter::HandleMeleeAttackInput(const FInputActionValue& InValue)
+{
+	if (bCanAttack && !GetCharacterMovement()->IsFalling())
+	{
+		bCanAttack = false;
+
+		GetCharacterMovement()->SetMovementMode(MOVE_None);
+		FTimerHandle TimerHandle;
+		GetWorldTimerManager().SetTimer(TimerHandle, FTimerDelegate::CreateLambda
+		([&]() -> void
+			{
+				bCanAttack = true;
+				GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+			}), MeleeAttackMontagePlayTime, false
+		);
+
+		UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance();
+		if (IsValid(AnimInstance))
+		{
+			AnimInstance->Montage_Play(MeleeAttackMontage);
+		}
+	}
+}
+
+float ADXPlayerCharacter::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
+{
+	UKismetSystemLibrary::PrintString(GetWorld(), FString::Printf(TEXT("TakeDamage: %f"), DamageAmount), true, true, FLinearColor::Red, 5.f);
+
+	return Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
+}
+
+void ADXPlayerCharacter::CheckMeleeAttackHit()
+{
+	TArray<FHitResult> OutHitResults;
+	TSet<ACharacter*> DamagedCharacters;
+	FCollisionQueryParams Params(NAME_None, false, this);
+
+	const float MeleeAttackRange = 50.f;
+	const float MeleeAttackRadius = 50.f;
+	const float MeleeAttackDamage = 10.f;
+
+	const FVector Forward = GetActorForwardVector();
+	const FVector Start = GetActorLocation() + Forward * GetCapsuleComponent()->GetScaledCapsuleRadius();
+	const FVector End = Start + GetActorForwardVector() * MeleeAttackRange;
+
+	bool bIsHitDetected = GetWorld()->SweepMultiByChannel(OutHitResults, Start, End, FQuat::Identity, ECC_Camera, FCollisionShape::MakeSphere(MeleeAttackRadius), Params);
+	if (bIsHitDetected)
+	{
+		for (auto const& OutHitResult : OutHitResults)
+		{
+			ACharacter* DamagedCharacter = Cast<ACharacter>(OutHitResult.GetActor());
+			if (IsValid(DamagedCharacter))
+			{
+				DamagedCharacters.Add(DamagedCharacter);
+			}
+		}
+
+		FDamageEvent DamageEvent;
+		for (auto const& DamagedCharacter : DamagedCharacters)
+		{
+			DamagedCharacter->TakeDamage(MeleeAttackDamage, DamageEvent, GetController(), this);
+		}
+	}
+	FColor DrawColor = bIsHitDetected ? FColor::Green : FColor::Red;
+	DrawDebugMeleeAttack(DrawColor, Start, End, Forward);
+}
+
+void ADXPlayerCharacter::DrawDebugMeleeAttack(const FColor& DrawColor, FVector TraceStart, FVector TraceEnd, FVector Forward)
+{
+	const float MeleeAttackRange = 50.f;
+	const float MeleeAttackRadius = 50.f;
+	FVector CapsuleOrigin = TraceStart + (TraceEnd - TraceStart) * 0.5f;
+	float CapsuleHalfHeight = MeleeAttackRange * 0.5f;
+	DrawDebugCapsule(GetWorld(), CapsuleOrigin, CapsuleHalfHeight, MeleeAttackRadius, FRotationMatrix::MakeFromZ(Forward).ToQuat(), DrawColor, false, 5.f);
 }
 
 void ADXPlayerCharacter::ServerRPCSpawnLandMine_Implementation()
