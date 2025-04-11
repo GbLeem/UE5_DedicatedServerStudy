@@ -99,7 +99,6 @@ private:
 
 	UFUNCTION(Server, Reliable, WithValidation)
 	void ServerRPCMeleeAttack(float InStartMeleeAttackTime);
-	//void ServerRPCMeleeAttack();
 
 	UFUNCTION(NetMulticast, UnReliable)
 	void MulticastRPCMeleeAttack();

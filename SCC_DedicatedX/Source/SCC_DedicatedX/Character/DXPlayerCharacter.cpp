@@ -216,9 +216,9 @@ void ADXPlayerCharacter::ServerRPCMeleeAttack_Implementation(float InStartMeleeA
 	PlayMeleeAttackMontage();
 
 	//MulticastRPCMeleeAttack();
-	for (APlayerController* PlayerController : TActorRange<APlayerController>(GetWorld()))
-	{
-		if (IsValid(PlayerController) && GetController() != PlayerController)
+	for (APlayerController* PlayerController : TActorRange<APlayerController>(GetWorld())) //controller of the attacking player
+	{		
+		if (IsValid(PlayerController) && GetController() != PlayerController) //except attaker
 		{
 			ADXPlayerCharacter* OtherPlayerCharacter = Cast<ADXPlayerCharacter>(PlayerController->GetPawn());
 			if(IsValid(OtherPlayerCharacter))
