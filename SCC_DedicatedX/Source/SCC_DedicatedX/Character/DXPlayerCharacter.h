@@ -98,7 +98,7 @@ private:
 	void MulticastDrawDebugMeleeAttack(const FColor& DrawColor, FVector TraceStart, FVector TraceEnd, FVector Forward);
 
 	UFUNCTION(Server, Reliable, WithValidation)
-	void ServerMeleeAttack(float InStartMeleeAttackTime);
+	void ServerRPCMeleeAttack(float InStartMeleeAttackTime);
 	//void ServerRPCMeleeAttack();
 
 	UFUNCTION(NetMulticast, UnReliable)
@@ -108,6 +108,12 @@ private:
 	void OnRep_CanAttack();
 
 	void PlayMeleeAttackMontage();
+
+	UFUNCTION(Server, Reliable, WithValidation)
+	void ServerRPCPerformMeleeHit(ACharacter* InDamagedCharacters, float InCheckTime);
+
+	UFUNCTION(Client, Unreliable)
+	void ClientRPCPlayMeleeAttackMontage(ADXPlayerCharacter* InTargetCharacter);
 
 protected:
 	UPROPERTY(ReplicatedUsing = OnRep_CanAttack)
@@ -122,6 +128,7 @@ protected:
 
 	float MeleeAttackTimeDifference;
 
+	float MinAllowedTimeForMeleeAttack;
 #pragma endregion
 
 };
