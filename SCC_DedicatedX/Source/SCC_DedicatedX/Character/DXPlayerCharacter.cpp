@@ -7,13 +7,17 @@
 #include "Engine/DamageEvents.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "GameFramework/GameStateBase.h"
 #include "Camera/CameraComponent.h"
 #include "EnhancedInputComponent.h"
 #include "Kismet/KismetSystemLibrary.h"
+#include "Net/UnrealNetwork.h"
 
 ADXPlayerCharacter::ADXPlayerCharacter()
 	:bCanAttack(true)
 	,MeleeAttackMontagePlayTime(0.f)
+	,LastStartMeleeAttackTime(0.f)
+	,MeleeAttackTimeDifference(0.f)
 {
 	PrimaryActorTick.bCanEverTick = false;
 
@@ -33,6 +37,13 @@ ADXPlayerCharacter::ADXPlayerCharacter()
 	Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
 	Camera->bUsePawnControlRotation = false;
 	Camera->SetupAttachment(SpringArm, USpringArmComponent::SocketName);
+}
+
+void ADXPlayerCharacter::GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME(ThisClass, bCanAttack);
 }
 
 void ADXPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -120,22 +131,12 @@ void ADXPlayerCharacter::HandleMeleeAttackInput(const FInputActionValue& InValue
 {
 	if (bCanAttack && !GetCharacterMovement()->IsFalling())
 	{
-		bCanAttack = false;
+		//ServerRPCMeleeAttack();
+		ServerMeleeAttack(GetWorld()->GetGameState()->GetServerWorldTimeSeconds());
 
-		GetCharacterMovement()->SetMovementMode(MOVE_None);
-		FTimerHandle TimerHandle;
-		GetWorldTimerManager().SetTimer(TimerHandle, FTimerDelegate::CreateLambda
-		([&]() -> void
-			{
-				bCanAttack = true;
-				GetCharacterMovement()->SetMovementMode(MOVE_Walking);
-			}), MeleeAttackMontagePlayTime, false
-		);
-
-		UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance();
-		if (IsValid(AnimInstance))
+		if (!HasAuthority() && IsLocallyControlled())
 		{
-			AnimInstance->Montage_Play(MeleeAttackMontage);
+			PlayMeleeAttackMontage();
 		}
 	}
 }
@@ -149,47 +150,143 @@ float ADXPlayerCharacter::TakeDamage(float DamageAmount, FDamageEvent const& Dam
 
 void ADXPlayerCharacter::CheckMeleeAttackHit()
 {
-	TArray<FHitResult> OutHitResults;
-	TSet<ACharacter*> DamagedCharacters;
-	FCollisionQueryParams Params(NAME_None, false, this);
-
-	const float MeleeAttackRange = 50.f;
-	const float MeleeAttackRadius = 50.f;
-	const float MeleeAttackDamage = 10.f;
-
-	const FVector Forward = GetActorForwardVector();
-	const FVector Start = GetActorLocation() + Forward * GetCapsuleComponent()->GetScaledCapsuleRadius();
-	const FVector End = Start + GetActorForwardVector() * MeleeAttackRange;
-
-	bool bIsHitDetected = GetWorld()->SweepMultiByChannel(OutHitResults, Start, End, FQuat::Identity, ECC_Camera, FCollisionShape::MakeSphere(MeleeAttackRadius), Params);
-	if (bIsHitDetected)
+	//server check
+	if (HasAuthority())
 	{
-		for (auto const& OutHitResult : OutHitResults)
+		TArray<FHitResult> OutHitResults;
+		TSet<ACharacter*> DamagedCharacters;
+		FCollisionQueryParams Params(NAME_None, false, this);
+
+		const float MeleeAttackRange = 50.f;
+		const float MeleeAttackRadius = 50.f;
+		const float MeleeAttackDamage = 10.f;
+
+		const FVector Forward = GetActorForwardVector();
+		const FVector Start = GetActorLocation() + Forward * GetCapsuleComponent()->GetScaledCapsuleRadius();
+		const FVector End = Start + GetActorForwardVector() * MeleeAttackRange;
+
+		bool bIsHitDetected = GetWorld()->SweepMultiByChannel(OutHitResults, Start, End, FQuat::Identity, ECC_Camera, FCollisionShape::MakeSphere(MeleeAttackRadius), Params);
+		if (bIsHitDetected)
 		{
-			ACharacter* DamagedCharacter = Cast<ACharacter>(OutHitResult.GetActor());
-			if (IsValid(DamagedCharacter))
+			for (auto const& OutHitResult : OutHitResults)
 			{
-				DamagedCharacters.Add(DamagedCharacter);
+				ACharacter* DamagedCharacter = Cast<ACharacter>(OutHitResult.GetActor());
+				if (IsValid(DamagedCharacter))
+				{
+					DamagedCharacters.Add(DamagedCharacter);
+				}
+			}
+
+			FDamageEvent DamageEvent;
+			for (auto const& DamagedCharacter : DamagedCharacters)
+			{
+				DamagedCharacter->TakeDamage(MeleeAttackDamage, DamageEvent, GetController(), this);
 			}
 		}
-
-		FDamageEvent DamageEvent;
-		for (auto const& DamagedCharacter : DamagedCharacters)
-		{
-			DamagedCharacter->TakeDamage(MeleeAttackDamage, DamageEvent, GetController(), this);
-		}
+		FColor DrawColor = bIsHitDetected ? FColor::Green : FColor::Red;
+		MulticastDrawDebugMeleeAttack(DrawColor, Start, End, Forward);
 	}
-	FColor DrawColor = bIsHitDetected ? FColor::Green : FColor::Red;
-	DrawDebugMeleeAttack(DrawColor, Start, End, Forward);
 }
 
-void ADXPlayerCharacter::DrawDebugMeleeAttack(const FColor& DrawColor, FVector TraceStart, FVector TraceEnd, FVector Forward)
+void ADXPlayerCharacter::ServerMeleeAttack_Implementation(float InStartMeleeAttackTime)
+{
+	MeleeAttackTimeDifference = GetWorld()->GetTimeSeconds() - InStartMeleeAttackTime;
+	MeleeAttackTimeDifference = FMath::Clamp(MeleeAttackTimeDifference, 0.f, MeleeAttackMontagePlayTime);
+
+	if (KINDA_SMALL_NUMBER < MeleeAttackMontagePlayTime - MeleeAttackTimeDifference)
+	{
+		bCanAttack = false;
+		OnRep_CanAttack();
+
+		FTimerHandle TimerHandle;
+		GetWorldTimerManager().SetTimer(TimerHandle, FTimerDelegate::CreateLambda
+		([&]() -> void
+			{
+				bCanAttack = true;
+				OnRep_CanAttack();
+			}), MeleeAttackMontagePlayTime - MeleeAttackTimeDifference, false, -1.f
+		);
+	}
+	LastStartMeleeAttackTime = InStartMeleeAttackTime;
+
+	PlayMeleeAttackMontage();
+
+	MulticastRPCMeleeAttack();
+}
+
+bool ADXPlayerCharacter::ServerMeleeAttack_Validate(float InStartMeleeAttackTime)
+{
+	if (LastStartMeleeAttackTime == 0.f)
+	{
+		return true;
+	}
+	return (MeleeAttackMontagePlayTime - 0.1f) < (InStartMeleeAttackTime - LastStartMeleeAttackTime);
+}
+
+void ADXPlayerCharacter::MulticastDrawDebugMeleeAttack_Implementation(const FColor& DrawColor, FVector TraceStart, FVector TraceEnd, FVector Forward)
 {
 	const float MeleeAttackRange = 50.f;
 	const float MeleeAttackRadius = 50.f;
 	FVector CapsuleOrigin = TraceStart + (TraceEnd - TraceStart) * 0.5f;
 	float CapsuleHalfHeight = MeleeAttackRange * 0.5f;
 	DrawDebugCapsule(GetWorld(), CapsuleOrigin, CapsuleHalfHeight, MeleeAttackRadius, FRotationMatrix::MakeFromZ(Forward).ToQuat(), DrawColor, false, 5.f);
+}
+
+//void ADXPlayerCharacter::ServerRPCMeleeAttack_Implementation()
+//{
+//	MulticastRPCMeleeAttack();
+//}
+//
+//bool ADXPlayerCharacter::ServerRPCMeleeAttack_Validate()
+//{
+//	return true;
+//}
+
+void ADXPlayerCharacter::MulticastRPCMeleeAttack_Implementation()
+{
+	/*if (HasAuthority())
+	{
+		bCanAttack = false;
+
+		OnRep_CanAttack();
+
+		FTimerHandle TimerHandle;
+		GetWorldTimerManager().SetTimer(TimerHandle, FTimerDelegate::CreateLambda
+		([&]() -> void
+			{
+				bCanAttack = true;
+				OnRep_CanAttack();
+			}), MeleeAttackMontagePlayTime, false
+		);
+	}
+	PlayMeleeAttackMontage();*/
+
+	if (!HasAuthority() && !IsLocallyControlled())
+	{
+		PlayMeleeAttackMontage();
+	}
+}
+
+void ADXPlayerCharacter::OnRep_CanAttack()
+{
+	if (bCanAttack)
+	{
+		GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+	}
+	else
+	{
+		GetCharacterMovement()->SetMovementMode(MOVE_None);
+	}
+}
+
+void ADXPlayerCharacter::PlayMeleeAttackMontage()
+{
+	UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance();
+	if (IsValid(AnimInstance))
+	{
+		AnimInstance->StopAllMontages(0.f);
+		AnimInstance->Montage_Play(MeleeAttackMontage);
+	}
 }
 
 void ADXPlayerCharacter::ServerRPCSpawnLandMine_Implementation()

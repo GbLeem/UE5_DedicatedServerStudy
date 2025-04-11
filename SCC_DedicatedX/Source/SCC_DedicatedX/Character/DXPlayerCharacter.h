@@ -18,6 +18,7 @@ class SCC_DEDICATEDX_API ADXPlayerCharacter : public ADXCharacterBase
 public:
 	ADXPlayerCharacter();
 
+	virtual void GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const override;
 #pragma region Overrides Character
 
 public:
@@ -93,15 +94,33 @@ public:
 	void CheckMeleeAttackHit();
 
 private:
-	void DrawDebugMeleeAttack(const FColor& DrawColor, FVector TraceStart, FVector TraceEnd, FVector Forward);
+	UFUNCTION(NetMulticast, Reliable)
+	void MulticastDrawDebugMeleeAttack(const FColor& DrawColor, FVector TraceStart, FVector TraceEnd, FVector Forward);
+
+	UFUNCTION(Server, Reliable, WithValidation)
+	void ServerMeleeAttack(float InStartMeleeAttackTime);
+	//void ServerRPCMeleeAttack();
+
+	UFUNCTION(NetMulticast, UnReliable)
+	void MulticastRPCMeleeAttack();
+
+	UFUNCTION()
+	void OnRep_CanAttack();
+
+	void PlayMeleeAttackMontage();
 
 protected:
-	bool bCanAttack;
+	UPROPERTY(ReplicatedUsing = OnRep_CanAttack)
+	uint8 bCanAttack : 1;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	TObjectPtr<UAnimMontage> MeleeAttackMontage;
 	
 	float MeleeAttackMontagePlayTime;
+
+	float LastStartMeleeAttackTime;
+
+	float MeleeAttackTimeDifference;
 
 #pragma endregion
 

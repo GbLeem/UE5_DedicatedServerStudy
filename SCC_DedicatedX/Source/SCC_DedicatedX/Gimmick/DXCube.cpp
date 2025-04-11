@@ -102,7 +102,7 @@ bool ADXCube::IsNetRelevantFor(const AActor* RealViewer, const AActor* ViewTarge
 
 	if (!bIsNetRelevant)
 	{
-		DX_LOG_NET(LogDXNet, Log, TEXT("%s is not relevant for(%s %s)"), *GetName(), *RealViewer->GetName(), *ViewTarget->GetName());
+		//DX_LOG_NET(LogDXNet, Log, TEXT("%s is not relevant for(%s %s)"), *GetName(), *RealViewer->GetName(), *ViewTarget->GetName());
 	}
 	return bIsNetRelevant;	
 }
@@ -117,7 +117,7 @@ void ADXCube::OnRep_ServerLightColor()
 {
 	if (HasAuthority())
 	{
-		DX_LOG_NET(LogDXNet, Log, TEXT("OnRep_ServerLightColor(): %s"), *ServerLightColor.ToString());
+		//DX_LOG_NET(LogDXNet, Log, TEXT("OnRep_ServerLightColor(): %s"), *ServerLightColor.ToString());
 	}
 	PointLight->SetLightColor(ServerLightColor);
 }
