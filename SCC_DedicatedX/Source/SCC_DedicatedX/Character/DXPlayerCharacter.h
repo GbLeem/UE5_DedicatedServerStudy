@@ -9,6 +9,9 @@ class UCameraComponent;
 class USpringArmComponent;
 class UInputMappingContext;
 class UInputAction;
+class UDXStatusComponent;
+class UDXHPTextWidgetComponent;
+class UUW_HPText;
 
 UCLASS()
 class SCC_DEDICATEDX_API ADXPlayerCharacter : public ADXCharacterBase
@@ -19,6 +22,8 @@ public:
 	ADXPlayerCharacter();
 
 	virtual void GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const override;
+
+	virtual void Tick(float DeltaTime);
 #pragma region Overrides Character
 
 public:
@@ -130,4 +135,21 @@ protected:
 	float MinAllowedTimeForMeleeAttack;
 #pragma endregion
 
+#pragma region DXPlayerCharacter Components
+public:
+
+protected:
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DXPlayerCharacter|Components")
+	TObjectPtr<UDXStatusComponent> StatusComponent;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DXPlayerCharacter|Components")
+	TObjectPtr<UDXHPTextWidgetComponent> HPTextWidgetComponent;
+
+#pragma endregion
+
+#pragma region HPWidget
+public:
+	void SetHPTextWidget(UUW_HPText* InHPTextWidget);
+
+#pragma endregion
 };

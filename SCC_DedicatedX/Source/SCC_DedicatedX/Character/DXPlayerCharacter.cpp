@@ -1,6 +1,9 @@
 #include "Character/DXPlayerCharacter.h"
 
 #include "Gimmick/DXLandMine.h"
+#include "Component/DXStatusComponent.h"
+#include "Component/DXHPTextWidgetComponent.h"
+#include "UI/UW_HPText.h"
 
 #include "Components/CapsuleComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -12,6 +15,8 @@
 #include "Camera/CameraComponent.h"
 #include "EnhancedInputComponent.h"
 #include "Kismet/KismetSystemLibrary.h"
+#include "Kismet/GameplayStatics.h"
+#include "Kismet/KismetMathLibrary.h"
 #include "Net/UnrealNetwork.h"
 
 ADXPlayerCharacter::ADXPlayerCharacter()
@@ -21,7 +26,7 @@ ADXPlayerCharacter::ADXPlayerCharacter()
 	,MeleeAttackTimeDifference(0.f)
 	, MinAllowedTimeForMeleeAttack(0.02f)
 {
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
 
 	bUseControllerRotationPitch = false;
 	bUseControllerRotationYaw = false;
@@ -39,6 +44,16 @@ ADXPlayerCharacter::ADXPlayerCharacter()
 	Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
 	Camera->bUsePawnControlRotation = false;
 	Camera->SetupAttachment(SpringArm, USpringArmComponent::SocketName);
+
+	//status and ui
+	StatusComponent = CreateDefaultSubobject<UDXStatusComponent>(TEXT("StatusComponent"));
+
+	HPTextWidgetComponent = CreateDefaultSubobject<UDXHPTextWidgetComponent>(TEXT("HPTextWidgetComponent"));
+	HPTextWidgetComponent->SetupAttachment(GetRootComponent());
+	HPTextWidgetComponent->SetRelativeLocation(FVector(0.f, 0.f, 100.f));
+
+	HPTextWidgetComponent->SetWidgetSpace(EWidgetSpace::World);
+	HPTextWidgetComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 }
 
 void ADXPlayerCharacter::GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const
@@ -46,6 +61,16 @@ void ADXPlayerCharacter::GetLifetimeReplicatedProps(TArray<class FLifetimeProper
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(ThisClass, bCanAttack);
+}
+
+void ADXPlayerCharacter::Tick(float DeltaTime)
+{
+	if (IsValid(HPTextWidgetComponent) && !HasAuthority())
+	{
+		FVector WidgetComponentLocation = HPTextWidgetComponent->GetComponentLocation();
+		FVector LocalPlayerCameraLocation = UGameplayStatics::GetPlayerCameraManager(this, 0)->GetCameraLocation();
+		HPTextWidgetComponent->SetWorldRotation(UKismetMathLibrary::FindLookAtRotation(WidgetComponentLocation, LocalPlayerCameraLocation));
+	}
 }
 
 void ADXPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -147,7 +172,10 @@ float ADXPlayerCharacter::TakeDamage(float DamageAmount, FDamageEvent const& Dam
 {
 	UKismetSystemLibrary::PrintString(GetWorld(), FString::Printf(TEXT("TakeDamage: %f"), DamageAmount), true, true, FLinearColor::Red, 5.f);
 
-	return Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
+	//return Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
+	float ActualDamage = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
+	StatusComponent->ApplyDamage(ActualDamage);
+	return ActualDamage;
 }
 
 void ADXPlayerCharacter::CheckMeleeAttackHit()
@@ -274,6 +302,17 @@ void ADXPlayerCharacter::PlayMeleeAttackMontage()
 	{
 		AnimInstance->StopAllMontages(0.f);
 		AnimInstance->Montage_Play(MeleeAttackMontage);
+	}
+}
+
+void ADXPlayerCharacter::SetHPTextWidget(UUW_HPText* InHPTextWidget)
+{
+	UUW_HPText* HPWidget = Cast<UUW_HPText>(InHPTextWidget);
+	if (IsValid(HPWidget))
+	{
+		HPWidget->InitializeHPTextWidget(StatusComponent);
+		StatusComponent->OnCurrentHPChanged.AddUObject(HPWidget, &UUW_HPText::OnMaxHPChange);
+		StatusComponent->OnMaxHPChanged.AddUObject(HPWidget, &UUW_HPText::OnMaxHPChange);
 	}
 }
 
