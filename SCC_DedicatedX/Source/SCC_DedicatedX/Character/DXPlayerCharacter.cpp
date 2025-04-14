@@ -311,8 +311,17 @@ void ADXPlayerCharacter::SetHPTextWidget(UUW_HPText* InHPTextWidget)
 	if (IsValid(HPWidget))
 	{
 		HPWidget->InitializeHPTextWidget(StatusComponent);
-		StatusComponent->OnCurrentHPChanged.AddUObject(HPWidget, &UUW_HPText::OnMaxHPChange);
+		StatusComponent->OnCurrentHPChanged.AddUObject(HPWidget, &UUW_HPText::OnCurrentHPChange);
 		StatusComponent->OnMaxHPChanged.AddUObject(HPWidget, &UUW_HPText::OnMaxHPChange);
+	}
+}
+
+void ADXPlayerCharacter::TakeBuff(float InBuffValue)
+{
+	if (IsValid(StatusComponent))
+	{
+		StatusComponent->SetMaxHP(StatusComponent->GetMaxHP() + InBuffValue);
+		StatusComponent->SetCurrentHP(StatusComponent->GetCurrentHP() + InBuffValue);
 	}
 }
 

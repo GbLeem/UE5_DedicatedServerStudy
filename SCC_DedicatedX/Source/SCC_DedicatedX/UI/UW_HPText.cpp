@@ -28,7 +28,7 @@ void UUW_HPText::InitializeHPTextWidget(UDXStatusComponent* InStatusComponent)
 }
 
 void UUW_HPText::OnMaxHPChange(float InMaxHP)
-{
+{	
 	MaxHPText->SetText(FText::FromString(FString::SanitizeFloat(InMaxHP)));
 }
 
