@@ -38,3 +38,13 @@ https://github.com/user-attachments/assets/aa0d2ded-be14-4d70-9354-72e1cbd2c567
 <br/>
 
 ![image](https://github.com/user-attachments/assets/7674c17e-ff47-492f-a413-afedf157615b)
+
+### Server Connection System (5/2)
+* add Title Level (add BP_GameModeBase_Title, DXTitlePlayerController, UW_TitleLayout) for Connection Scene
+* implement game flow system (update DXGameModeBase, DXGameStateBase code) 
+  * wait for player
+  * count down for play
+  * show current state by notification text(WBP_NotificationText)
+ <br/>
+
+https://github.com/user-attachments/assets/7f762e4f-ef79-4d97-850b-f97a491602bd
