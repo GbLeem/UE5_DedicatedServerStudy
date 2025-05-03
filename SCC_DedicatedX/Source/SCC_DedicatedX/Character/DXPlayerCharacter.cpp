@@ -1,6 +1,8 @@
 #include "Character/DXPlayerCharacter.h"
 
 #include "Gimmick/DXLandMine.h"
+#include "Controller/DXPlayerController.h"
+#include "GameState/DXGameStateBase.h"
 #include "Component/DXStatusComponent.h"
 #include "Component/DXHPTextWidgetComponent.h"
 #include "UI/UW_HPText.h"
@@ -110,6 +112,8 @@ void ADXPlayerCharacter::BeginPlay()
 	{
 		MeleeAttackMontagePlayTime = MeleeAttackMontage->GetPlayLength();
 	}
+
+	StatusComponent->OnOutOfCurrentHP.AddUObject(this, &ThisClass::OnDeath);
 }
 
 void ADXPlayerCharacter::HandleMoveInput(const FInputActionValue& InValue)
@@ -174,7 +178,12 @@ float ADXPlayerCharacter::TakeDamage(float DamageAmount, FDamageEvent const& Dam
 
 	//return Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
 	float ActualDamage = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
-	StatusComponent->ApplyDamage(ActualDamage);
+
+	ADXGameStateBase* DXGameState = Cast<ADXGameStateBase>(UGameplayStatics::GetGameState(this));
+	if (IsValid(DXGameState) && DXGameState->MatchState == EMatchState::Playing)
+	{
+		StatusComponent->ApplyDamage(ActualDamage);
+	}
 	return ActualDamage;
 }
 
@@ -302,6 +311,16 @@ void ADXPlayerCharacter::PlayMeleeAttackMontage()
 	{
 		AnimInstance->StopAllMontages(0.f);
 		AnimInstance->Montage_Play(MeleeAttackMontage);
+	}
+}
+
+void ADXPlayerCharacter::OnDeath()
+{
+	ADXPlayerController* PlayerController = GetController<ADXPlayerController>();
+	//server
+	if (IsValid(PlayerController) && HasAuthority())
+	{
+		PlayerController->OnCharaterDead();
 	}
 }
 

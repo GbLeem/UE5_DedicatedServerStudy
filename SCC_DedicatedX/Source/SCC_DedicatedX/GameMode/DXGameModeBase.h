@@ -18,11 +18,14 @@ public:
 
 	virtual void BeginPlay() override;
 
+	void OnCharacterDead(ADXPlayerController* InController);
+
 private:
 	UFUNCTION()
 	void OnMainTimerElapsed();
 
 	void NotifyToAllPlayer(const FString& NotificationString);
+
 
 public:
 	FTimerHandle MainTimerHandle;
@@ -40,5 +43,4 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 	TArray<TObjectPtr<ADXPlayerController>> DeadPlayerControllers;
-
 };

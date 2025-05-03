@@ -74,9 +74,8 @@ void ADXGameModeBase::OnMainTimerElapsed()
 		}
 		else
 		{
+			RemainWaitingTimeForPlaying--;
 			NotificationString = FString::Printf(TEXT("Wait %d seconds for playing"), RemainWaitingTimeForPlaying);
-
-			--RemainWaitingTimeForPlaying;
 		}
 		if (RemainWaitingTimeForPlaying <= 0)
 		{
@@ -87,7 +86,19 @@ void ADXGameModeBase::OnMainTimerElapsed()
 		break;
 	}	
 	case EMatchState::Playing:
+	{
+		DXGameState->AlivePlayerControllerCount = AlivePlayerControllers.Num();
+		FString NotificationString = FString::Printf(TEXT("%d / %d"), DXGameState->AlivePlayerControllerCount, DXGameState->AlivePlayerControllerCount + DeadPlayerControllers.Num());
+		NotifyToAllPlayer(NotificationString);
+
+		if (DXGameState->AlivePlayerControllerCount <= 1)
+		{
+			DXGameState->MatchState = EMatchState::Enging;
+
+			AlivePlayerControllers[0]->ClientRPCShowGameResultWidget(1);
+		}
 		break;
+	}
 	case EMatchState::Enging:
 		break;
 	case EMatchState::End:
@@ -108,4 +119,15 @@ void ADXGameModeBase::NotifyToAllPlayer(const FString& NotificationString)
 	{
 		DeadPlayerController->NotificationText = FText::FromString(NotificationString);
 	}
+}
+
+void ADXGameModeBase::OnCharacterDead(ADXPlayerController* InController)
+{
+	if (!IsValid(InController) || AlivePlayerControllers.Find(InController) == INDEX_NONE)
+	{
+		return;
+	}
+	InController->ClientRPCShowGameResultWidget(AlivePlayerControllers.Num());
+	AlivePlayerControllers.Remove(InController);
+	DeadPlayerControllers.Add(InController);
 }

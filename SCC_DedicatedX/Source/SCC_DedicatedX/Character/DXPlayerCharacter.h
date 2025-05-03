@@ -135,6 +135,13 @@ protected:
 	float MinAllowedTimeForMeleeAttack;
 #pragma endregion
 
+#pragma region Dead
+public:
+	UFUNCTION()
+	void OnDeath();
+
+#pragma endregion
+
 #pragma region DXPlayerCharacter Components
 public:
 
