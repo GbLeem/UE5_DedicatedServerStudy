@@ -51,6 +51,15 @@ void ADXPlayerController::OnCharaterDead()
 	}
 }
 
+void ADXPlayerController::ClientRPCReturnToTitle_Implementation()
+{
+	//only client's level change
+	if (IsLocalController())
+	{
+		UGameplayStatics::OpenLevel(GetWorld(), FName(TEXT("Title")), true);
+	}
+}
+
 void ADXPlayerController::ClientRPCShowGameResultWidget_Implementation(int32 InRanking)
 {
 	if (IsLocalController())

@@ -37,6 +37,11 @@ public:
 
 	int32 MinimumPlayerCountForPlaying = 2;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	int32 EndingTime = 15;
+
+	int32 RemainWaitingTimeForEnding = 15;
+
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 	TArray<TObjectPtr<ADXPlayerController>> AlivePlayerControllers;

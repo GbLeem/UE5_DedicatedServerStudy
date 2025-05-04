@@ -2,6 +2,7 @@
 
 #include "Controller/DXPlayerController.h"
 #include "GameState/DXGameStateBase.h"
+#include "Kismet/GameplayStatics.h"
 
 void ADXGameModeBase::PostLogin(APlayerController* NewPlayer)
 {
@@ -48,6 +49,7 @@ void ADXGameModeBase::BeginPlay()
 	GetWorld()->GetTimerManager().SetTimer(MainTimerHandle, this, &ThisClass::OnMainTimerElapsed, 1.f, true);
 
 	RemainWaitingTimeForPlaying = WaitingTime;
+	RemainWaitingTimeForEnding = EndingTime;
 }
 
 void ADXGameModeBase::OnMainTimerElapsed()
@@ -100,7 +102,33 @@ void ADXGameModeBase::OnMainTimerElapsed()
 		break;
 	}
 	case EMatchState::Enging:
+	{
+		FString NotificationString = FString::Printf(TEXT("Waiting %d for returning to title."), RemainWaitingTimeForEnding);
+		NotifyToAllPlayer(NotificationString);
+
+		--RemainWaitingTimeForEnding;
+
+		//kick player (using timer)
+		if (RemainWaitingTimeForEnding <= 0)
+		{
+			for (auto AliveController : AlivePlayerControllers)	
+			{
+				AliveController->ClientRPCReturnToTitle();
+			}
+
+			for (auto DeadController : DeadPlayerControllers)
+			{
+				DeadController->ClientRPCReturnToTitle();
+			}
+			MainTimerHandle.Invalidate();
+
+			FName CurrentLevelName = FName(UGameplayStatics::GetCurrentLevelName(this));			
+			UGameplayStatics::OpenLevel(this, CurrentLevelName, true);
+
+			return;
+		}
 		break;
+	}
 	case EMatchState::End:
 		break;
 	default:
