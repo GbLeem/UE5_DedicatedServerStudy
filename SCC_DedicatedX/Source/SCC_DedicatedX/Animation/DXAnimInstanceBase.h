@@ -16,8 +16,8 @@ public:
 
 	virtual void NativeUpdateAnimation(float DeltaSeconds) override;
 
-	UFUNCTION()
-	void AnimNotify_CheckMeleeAttackHit();
+		UFUNCTION()
+		void AnimNotify_CheckMeleeAttackHit();
 
 protected:
 	UPROPERTY()

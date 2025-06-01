@@ -3,6 +3,7 @@
 #include "Gimmick/DXLandMine.h"
 #include "Controller/DXPlayerController.h"
 #include "GameState/DXGameStateBase.h"
+
 #include "Component/DXStatusComponent.h"
 #include "Component/DXHPTextWidgetComponent.h"
 #include "UI/UW_HPText.h"
@@ -16,6 +17,7 @@
 #include "GameFramework/GameStateBase.h"
 #include "Camera/CameraComponent.h"
 #include "EnhancedInputComponent.h"
+#include "Animation/DXAnimInstanceBase.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetMathLibrary.h"
@@ -27,6 +29,7 @@ ADXPlayerCharacter::ADXPlayerCharacter()
 	,LastStartMeleeAttackTime(0.f)
 	,MeleeAttackTimeDifference(0.f)
 	, MinAllowedTimeForMeleeAttack(0.02f)
+	,DefaultComboAttackSectionName(FName("Combo1"))
 {
 	PrimaryActorTick.bCanEverTick = true;
 
@@ -56,6 +59,8 @@ ADXPlayerCharacter::ADXPlayerCharacter()
 
 	HPTextWidgetComponent->SetWidgetSpace(EWidgetSpace::World);
 	HPTextWidgetComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	
+	ComboAttackSectionName = DefaultComboAttackSectionName;
 }
 
 void ADXPlayerCharacter::GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const
@@ -91,6 +96,7 @@ void ADXPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 	EIC->BindAction(LandMineAction, ETriggerEvent::Started, this, &ThisClass::HandleLandMineInput);
 
 	EIC->BindAction(MeleeAttackAction, ETriggerEvent::Started, this, &ThisClass::HandleMeleeAttackInput);
+	EIC->BindAction(ComboAttackAction, ETriggerEvent::Started, this, &ThisClass::HandleComboAttackInput);
 }
 
 void ADXPlayerCharacter::BeginPlay()
@@ -114,6 +120,12 @@ void ADXPlayerCharacter::BeginPlay()
 	}
 
 	StatusComponent->OnOutOfCurrentHP.AddUObject(this, &ThisClass::OnDeath);
+
+	UDXAnimInstanceBase* Anim = Cast<UDXAnimInstanceBase>(GetMesh()->GetAnimInstance());
+	if (IsValid(Anim))
+	{
+		Anim->OnPlayMontageNotifyBegin.AddDynamic(this, &ThisClass::OnMontageNotifyBegin);
+	}
 }
 
 void ADXPlayerCharacter::HandleMoveInput(const FInputActionValue& InValue)
@@ -172,11 +184,23 @@ void ADXPlayerCharacter::HandleMeleeAttackInput(const FInputActionValue& InValue
 	}
 }
 
+void ADXPlayerCharacter::HandleComboAttackInput(const FInputActionValue& InValue)
+{
+	if (!HasAuthority() && IsLocallyControlled())
+	{
+		if (bCanCombo)
+		{
+			ServerRPCComboAttack();
+			PlayComboAttackMontage();
+			bCanCombo = false;
+		}
+	}
+}
+
 float ADXPlayerCharacter::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
 {
 	UKismetSystemLibrary::PrintString(GetWorld(), FString::Printf(TEXT("TakeDamage: %f"), DamageAmount), true, true, FLinearColor::Red, 5.f);
 
-	//return Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
 	float ActualDamage = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
 
 	ADXGameStateBase* DXGameState = Cast<ADXGameStateBase>(UGameplayStatics::GetGameState(this));
@@ -190,8 +214,8 @@ float ADXPlayerCharacter::TakeDamage(float DamageAmount, FDamageEvent const& Dam
 void ADXPlayerCharacter::CheckMeleeAttackHit()
 {
 	//server check
-	//if (HasAuthority())
-	if(IsLocallyControlled())
+	//if(IsLocallyControlled())
+	if (HasAuthority())
 	{
 		TArray<FHitResult> OutHitResults;
 		TSet<ACharacter*> DamagedCharacters;
@@ -199,7 +223,7 @@ void ADXPlayerCharacter::CheckMeleeAttackHit()
 
 		const float MeleeAttackRange = 50.f;
 		const float MeleeAttackRadius = 50.f;
-		//const float MeleeAttackDamage = 10.f;
+		const float MeleeAttackDamage = 10.f;
 
 		const FVector Forward = GetActorForwardVector();
 		const FVector Start = GetActorLocation() + Forward * GetCapsuleComponent()->GetScaledCapsuleRadius();
@@ -220,8 +244,8 @@ void ADXPlayerCharacter::CheckMeleeAttackHit()
 			FDamageEvent DamageEvent;
 			for (auto const& DamagedCharacter : DamagedCharacters)
 			{				
-				//DamagedCharacter->TakeDamage(MeleeAttackDamage, DamageEvent, GetController(), this);
-				ServerRPCPerformMeleeHit(DamagedCharacter, GetWorld()->GetGameState()->GetServerWorldTimeSeconds());
+				DamagedCharacter->TakeDamage(MeleeAttackDamage, DamageEvent, GetController(), this);
+				//ServerRPCPerformMeleeHit(DamagedCharacter, GetWorld()->GetGameState()->GetServerWorldTimeSeconds());
 			}
 		}
 		FColor DrawColor = bIsHitDetected ? FColor::Green : FColor::Red;
@@ -275,6 +299,11 @@ bool ADXPlayerCharacter::ServerRPCMeleeAttack_Validate(float InStartMeleeAttackT
 	return (MeleeAttackMontagePlayTime - 0.1f) < (InStartMeleeAttackTime - LastStartMeleeAttackTime);
 }
 
+void ADXPlayerCharacter::ServerRPCComboAttack_Implementation()
+{
+	MulticastRPCComboAttack();
+}
+
 void ADXPlayerCharacter::MulticastDrawDebugMeleeAttack_Implementation(const FColor& DrawColor, FVector TraceStart, FVector TraceEnd, FVector Forward)
 {
 	const float MeleeAttackRange = 50.f;
@@ -292,6 +321,34 @@ void ADXPlayerCharacter::MulticastRPCMeleeAttack_Implementation()
 	}
 }
 
+void ADXPlayerCharacter::MulticastRPCComboAttack_Implementation()
+{
+	//except server and owner player
+	if (!IsLocallyControlled())
+	{
+		PlayComboAttackMontage();
+	}
+}
+
+void ADXPlayerCharacter::SetNextComboAttack(FName InSectionName)
+{
+	ComboAttackSectionName = InSectionName;
+}
+
+void ADXPlayerCharacter::ResetComboAttack()
+{
+	ComboAttackSectionName = DefaultComboAttackSectionName;
+}
+
+void ADXPlayerCharacter::OnMontageNotifyBegin(FName NotifyName, const FBranchingPointNotifyPayload& PayLoad)
+{
+	if (NotifyName == "None")
+	{
+		UKismetSystemLibrary::PrintString(GetWorld(), FString::Printf(TEXT("montage!!!!!!!")), true, true, FLinearColor::Red, 5.f);
+		bCanCombo = true;
+	}
+}
+
 void ADXPlayerCharacter::OnRep_CanAttack()
 {
 	if (bCanAttack)
@@ -304,6 +361,11 @@ void ADXPlayerCharacter::OnRep_CanAttack()
 	}
 }
 
+void ADXPlayerCharacter::OnRep_CanComboAttack()
+{
+	
+}
+
 void ADXPlayerCharacter::PlayMeleeAttackMontage()
 {
 	UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance();
@@ -311,7 +373,14 @@ void ADXPlayerCharacter::PlayMeleeAttackMontage()
 	{
 		AnimInstance->StopAllMontages(0.f);
 		AnimInstance->Montage_Play(MeleeAttackMontage);
+		//PlayAnimMontage()
 	}
+}
+
+void ADXPlayerCharacter::PlayComboAttackMontage()
+{
+	//UE_LOG(LogTemp, Warning, TEXT("%s / %s"),*ComboAttackMontage.GetName(), *ComboAttackSectionName.ToString());
+	PlayAnimMontage(ComboAttackMontage, 1.f, ComboAttackSectionName);
 }
 
 void ADXPlayerCharacter::OnDeath()
@@ -354,16 +423,6 @@ void ADXPlayerCharacter::ClientRPCPlayMeleeAttackMontage_Implementation(ADXPlaye
 
 void ADXPlayerCharacter::ServerRPCPerformMeleeHit_Implementation(ACharacter* InDamagedCharacters, float InCheckTime)
 {
-	/*for (auto const& InHitResult : InHitResults)
-	{
-		AActor* HitActor = InHitResult.GetActor();
-		if (IsValid(HitActor))
-		{
-			const float MeleeAttackDamage = 10.f;
-			FDamageEvent DamageEvent;
-			HitActor->TakeDamage(MeleeAttackDamage, DamageEvent, GetController(), this);
-		}
-	}*/
 	if (IsValid(InDamagedCharacters))
 	{		
 		const float MeleeAttackDamage = 10.f;

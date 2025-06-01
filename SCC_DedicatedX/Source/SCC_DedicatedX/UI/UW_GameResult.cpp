@@ -15,5 +15,6 @@ void UUW_GameResult::NativeConstruct()
 
 void UUW_GameResult::OnReturnToTitleButtonClicked()
 {
+	//test
 	UGameplayStatics::OpenLevel(GetWorld(), FName(TEXT("Title")), true);
 }
